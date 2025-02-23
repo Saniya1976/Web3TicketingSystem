@@ -1,73 +1,50 @@
-"use client"
-
-import { useState } from "react"
-import { useContract, useContractRead } from "@thirdweb-dev/react"
-import { Search, SlidersHorizontal } from "lucide-react"
-
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { ConnectWalletButton } from "@/components/connect-wallet"
-import { TicketCard } from "@/components/ticket-card"
-
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as string
+import { Ticket, Calendar, Users } from "lucide-react";
 
 export default function Home() {
-  const [searchQuery, setSearchQuery] = useState("")
-
-  const { contract } = useContract(CONTRACT_ADDRESS)
-  const { data: totalSupply, isLoading } = useContractRead(contract, "totalSupply")
-
-  const tickets = Array.from({ length: Number(totalSupply) || 0 }, (_, i) => i)
-  const filteredTickets = tickets // TODO: Implement search filtering
-
   return (
-    <main className="min-h-screen bg-background">
-      <nav className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between">
-          <h1 className="text-2xl font-bold">NFT Tickets</h1>
-          <ConnectWalletButton />
-        </div>
-      </nav>
+    <div className="flex flex-col items-center space-y-12">
+      <section className="text-center max-w-3xl">
+        <h1 className="text-4xl font-bold mb-6 bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
+          Welcome to Resalex Tickets
+        </h1>
+        <p className="text-xl text-muted-foreground">
+          The next generation of secure and transparent ticket management
+        </p>
+      </section>
 
-      <div className="container py-8">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search events..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <Button variant="outline" className="gap-2">
-            <SlidersHorizontal className="h-4 w-4" />
-            Filters
-          </Button>
+      <section className="grid md:grid-cols-3 gap-8 w-full max-w-5xl">
+        <div className="flex flex-col items-center p-6 bg-secondary rounded-lg">
+          <Ticket className="h-12 w-12 text-primary mb-4" />
+          <h3 className="text-xl font-semibold mb-2">Secure Tickets</h3>
+          <p className="text-center text-muted-foreground">
+            Every ticket is secured by blockchain technology
+          </p>
         </div>
 
-        {isLoading ? (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <TicketCard tokenId={0} contractAddress={CONTRACT_ADDRESS} />
-              </div>
-            ))}
-          </div>
-        ) : filteredTickets.length > 0 ? (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredTickets.map((tokenId) => (
-              <TicketCard key={tokenId} tokenId={tokenId} contractAddress={CONTRACT_ADDRESS} />
-            ))}
-          </div>
-        ) : (
-          <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
-            <h2 className="text-2xl font-bold">No tickets found</h2>
-            <p className="mt-2 text-muted-foreground">Try adjusting your search or filters</p>
-          </div>
-        )}
-      </div>
-    </main>
-  )
+        <div className="flex flex-col items-center p-6 bg-secondary rounded-lg">
+          <Calendar className="h-12 w-12 text-primary mb-4" />
+          <h3 className="text-xl font-semibold mb-2">Easy Management</h3>
+          <p className="text-center text-muted-foreground">
+            Create and manage events with just a few clicks
+          </p>
+        </div>
+
+        <div className="flex flex-col items-center p-6 bg-secondary rounded-lg">
+          <Users className="h-12 w-12 text-primary mb-4" />
+          <h3 className="text-xl font-semibold mb-2">Transfer & Sell</h3>
+          <p className="text-center text-muted-foreground">
+            Securely transfer or sell your tickets to others
+          </p>
+        </div>
+      </section>
+
+      <section className="w-full max-w-5xl bg-secondary p-8 rounded-lg">
+        <h2 className="text-2xl font-bold mb-6 text-center">Featured Events</h2>
+        <div className="text-center text-muted-foreground">
+          <p>No events available yet.</p>
+          <p>Check back soon for exciting upcoming events!</p>
+        </div>
+      </section>
+    </div>
+  );
 }
-
