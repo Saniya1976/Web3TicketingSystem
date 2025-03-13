@@ -1,207 +1,173 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 
-contract EventTickets is ERC721, Ownable, ReentrancyGuard {
-    using Counters for Counters.Counter;
-    Counters.Counter private _tokenIds;
+contract MyERC721 is Context, ERC165, IERC721, IERC721Metadata {
+    using Address for address;
 
-    struct TicketMetadata {
-        string eventName;
-        string venue;
-        string section; 
-        string seat;
-        string imageURI;
-        string additionalDetails;
+    // Token name and symbol
+    string private _name;
+    string private _symbol;
+
+    // Token storage mappings
+    mapping(uint256 => address) private _owners;
+    mapping(address => uint256) private _balances;
+    mapping(uint256 => address) private _tokenApprovals;
+    mapping(address => mapping(address => bool)) private _operatorApprovals;
+
+    // Token URI storage
+    mapping(uint256 => string) private _tokenURIs;
+
+    constructor(string memory name_, string memory symbol_) {
+        _name = name_;
+        _symbol = symbol_;
     }
 
-    struct Ticket {
-        uint256 eventId;
-        uint256 originalPrice;
-        uint256 currentPrice;
-        uint256 maxResalePrice;
-        uint256 eventDate;
-        bool isValid;
-        string metadataCID;
-        TicketMetadata metadata;
+    // ✅ Implements ERC165 interface check
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165, IERC165) returns (bool) {
+        return interfaceId == type(IERC721).interfaceId ||
+               interfaceId == type(IERC721Metadata).interfaceId ||
+               super.supportsInterface(interfaceId);
     }
 
-    mapping(uint256 => Ticket) public tickets;
-    mapping(uint256 => bool) public usedTickets;
-    mapping(address => bool) public organizers;
-    mapping(uint256 => address[]) public ownershipHistory;
-    mapping(uint256 => mapping(address => uint256)) public fractionalOwnership;
-    
-    uint256 public royaltyPercent = 10;
-    uint256 public constant PRICE_CEILING_MULTIPLIER = 150; // 150% of original price
-
-    event TicketMinted(uint256 tokenId, uint256 eventId, address to);
-    event TicketResold(uint256 tokenId, uint256 newPrice);
-    event TicketTransferred(uint256 tokenId, address from, address to);
-    event TicketUsed(uint256 tokenId, address user);
-    event OrganizerUpdated(address organizer, bool status);
-    event FractionalOwnershipUpdated(uint256 tokenId, address owner, uint256 share);
-
-    modifier onlyOrganizer() {
-        require(organizers[_msgSender()], "Not organizer");
-        _;
+    // ✅ Returns balance of a given address
+    function balanceOf(address owner) public view override returns (uint256) {
+        require(owner != address(0), "ERC721: balance query for the zero address");
+        return _balances[owner];
     }
 
-    constructor() ERC721("EventTicket", "ETKT") {
-        organizers[msg.sender] = true;
+    // ✅ Returns owner of a specific token
+    function ownerOf(uint256 tokenId) public view override returns (address) {
+        address owner = _owners[tokenId];
+        require(owner != address(0), "ERC721: owner query for nonexistent token");
+        return owner;
     }
 
-    function updateOrganizer(address organizer, bool status) external onlyOwner {
-        require(organizer != address(0), "Invalid address");
-        if (status) require(!organizers[organizer], "Already organizer");
-        else require(organizer != msg.sender, "Cannot remove self");
-        
-        organizers[organizer] = status;
-        emit OrganizerUpdated(organizer, status);
+    // ✅ Returns token name
+    function name() public view override returns (string memory) {
+        return _name;
     }
 
-    function mintTicket(
-        address to,
-        uint256 eventId,
-        uint256 price,
-        uint256 eventUnixTime,
-        string memory metadataCID,
-        TicketMetadata memory metadata
-    ) public onlyOrganizer {
-        require(to != address(0), "Invalid address");
-        require(price > 0, "Price must be > 0");
-        require(eventUnixTime > block.timestamp, "Event must be future");
-
-        _tokenIds.increment();
-        uint256 tokenId = _tokenIds.current();
-        
-        _safeMint(to, tokenId);
-        
-        tickets[tokenId] = Ticket({
-            eventId: eventId,
-            originalPrice: price,
-            currentPrice: price,
-            maxResalePrice: (price * PRICE_CEILING_MULTIPLIER) / 100,
-            eventDate: eventUnixTime,
-            isValid: true,
-            metadataCID: metadataCID,
-            metadata: metadata
-        });
-        
-        ownershipHistory[tokenId].push(to);
-        emit TicketMinted(tokenId, eventId, to);
+    // ✅ Returns token symbol
+    function symbol() public view override returns (string memory) {
+        return _symbol;
     }
 
-    function batchMintTickets(
-        address[] calldata recipients,
-        uint256 eventId,
-        uint256 price,
-        uint256 eventUnixTime,
-        string memory metadataCID,
-        TicketMetadata[] memory metadata
-    ) external onlyOrganizer {
-        require(recipients.length == metadata.length, "Array mismatch");
-        require(eventUnixTime > block.timestamp, "Event must be future");
-        require(price > 0, "Price must be > 0");
+    // ✅ Returns token URI (metadata location)
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        require(_owners[tokenId] != address(0), "ERC721Metadata: URI query for nonexistent token");
+        return _tokenURIs[tokenId];
+    }
 
-        for (uint256 i = 0; i < recipients.length; i++) {
-            mintTicket(
-                recipients[i],
-                eventId,
-                price,
-                eventUnixTime,
-                metadataCID,
-                metadata[i]
-            );
+    // ✅ Approve an address to manage a specific token
+    function approve(address to, uint256 tokenId) public override {
+        address owner = ownerOf(tokenId);
+        require(to != owner, "ERC721: approval to current owner");
+        require(_msgSender() == owner || isApprovedForAll(owner, _msgSender()), "ERC721: approve caller is not owner nor approved for all");
+        _approve(to, tokenId);
+    }
+
+    // ✅ Get approved address for a token
+    function getApproved(uint256 tokenId) public view override returns (address) {
+        require(_owners[tokenId] != address(0), "ERC721: approved query for nonexistent token");
+        return _tokenApprovals[tokenId];
+    }
+
+    // ✅ Set approval for all tokens of a user
+    function setApprovalForAll(address operator, bool approved) public override {
+        require(operator != _msgSender(), "ERC721: approve to caller");
+        _operatorApprovals[_msgSender()][operator] = approved;
+        emit ApprovalForAll(_msgSender(), operator, approved);
+    }
+
+    // ✅ Check if an operator is approved for all tokens of an owner
+    function isApprovedForAll(address owner, address operator) public view override returns (bool) {
+        return _operatorApprovals[owner][operator];
+    }
+
+    // ✅ Transfer token ownership
+    function transferFrom(address from, address to, uint256 tokenId) public override {
+        require(_isApprovedOrOwner(_msgSender(), tokenId), "ERC721: caller is not owner nor approved");
+        _transfer(from, to, tokenId);
+    }
+
+    // ✅ Safe transfer with no extra data
+    function safeTransferFrom(address from, address to, uint256 tokenId) public override {
+        safeTransferFrom(from, to, tokenId, "");
+    }
+
+    // ✅ Safe transfer with additional data
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data) public override {
+        require(_isApprovedOrOwner(_msgSender(), tokenId), "ERC721: caller is not owner nor approved");
+        _safeTransfer(from, to, tokenId, data);
+    }
+
+    // ✅ Internal safe transfer
+    function _safeTransfer(address from, address to, uint256 tokenId, bytes memory data) internal {
+        _transfer(from, to, tokenId);
+        require(_checkOnERC721Received(from, to, tokenId, data), "ERC721: transfer to non ERC721Receiver implementer");
+    }
+
+    // ✅ Internal transfer function
+    function _transfer(address from, address to, uint256 tokenId) internal {
+        require(ownerOf(tokenId) == from, "ERC721: transfer of token that is not owned");
+        require(to != address(0), "ERC721: transfer to the zero address");
+
+        _approve(address(0), tokenId);
+        _balances[from] -= 1;
+        _balances[to] += 1;
+        _owners[tokenId] = to;
+
+        emit Transfer(from, to, tokenId);
+    }
+
+    // ✅ Internal approve function
+    function _approve(address to, uint256 tokenId) internal {
+        _tokenApprovals[tokenId] = to;
+        emit Approval(ownerOf(tokenId), to, tokenId);
+    }
+
+    // ✅ Internal check for approved user
+    function _isApprovedOrOwner(address spender, uint256 tokenId) internal view returns (bool) {
+        address owner = ownerOf(tokenId);
+        return (spender == owner || getApproved(tokenId) == spender || isApprovedForAll(owner, spender));
+    }
+
+    // ✅ Check if contract supports ERC721Receiver
+   function _checkOnERC721Received(address from, address to, uint256 tokenId, bytes memory data) 
+    private returns (bool) {
+    uint256 size;
+    assembly {
+        size := extcodesize(to) // Check if address has contract code
+    }
+    if (size > 0) {
+        try IERC721Receiver(to).onERC721Received(_msgSender(), from, tokenId, data) 
+        returns (bytes4 retval) {
+            return retval == IERC721Receiver.onERC721Received.selector;
+        } catch {
+            return false;
         }
-    }
-
-    function invalidateTicket(uint256 tokenId) external onlyOrganizer {
-        require(tickets[tokenId].isValid, "Already invalid");
-        tickets[tokenId].isValid = false;
-    }
-
-    function useTicket(uint256 tokenId) external onlyOrganizer {
-        require(tickets[tokenId].isValid, "Invalid ticket");
-        require(!usedTickets[tokenId], "Already used");
-        require(block.timestamp < tickets[tokenId].eventDate, "Event expired");
-        
-        usedTickets[tokenId] = true;
-        emit TicketUsed(tokenId, ownerOf(tokenId));
-    }
-
-    function resellTicket(uint256 tokenId, uint256 newPrice) external {
-        require(ownerOf(tokenId) == msg.sender, "Not owner");
-        require(tickets[tokenId].isValid, "Invalid ticket");
-        require(block.timestamp < tickets[tokenId].eventDate, "Event expired");
-        require(newPrice <= tickets[tokenId].maxResalePrice, "Price exceeded");
-        
-        tickets[tokenId].currentPrice = newPrice;
-        emit TicketResold(tokenId, newPrice);
-    }
-
-    function buyTicket(uint256 tokenId) external payable nonReentrant {
-        Ticket storage ticket = tickets[tokenId];
-        require(ticket.isValid, "Invalid ticket");
-        require(!usedTickets[tokenId], "Already used");
-        require(msg.value >= ticket.currentPrice, "Insufficient funds");
-        require(block.timestamp < ticket.eventDate, "Event expired");
-
-        address seller = ownerOf(tokenId);
-        uint256 royalty = (msg.value * royaltyPercent) / 100;
-        uint256 sellerShare = msg.value - royalty;
-
-        _transfer(seller, _msgSender(), tokenId);
-        ownershipHistory[tokenId].push(_msgSender());
-
-        (bool success1, ) = owner().call{value: royalty}("");
-        (bool success2, ) = seller.call{value: sellerShare}("");
-        require(success1 && success2, "Payment failed");
-        
-        emit TicketTransferred(tokenId, seller, _msgSender());
-    }
-
-    function setFractionalOwnership(
-        uint256 tokenId,
-        address[] calldata owners,
-        uint256[] calldata shares
-    ) external {
-        require(ownerOf(tokenId) == _msgSender(), "Not owner");
-        require(owners.length == shares.length, "Array mismatch");
-        
-        uint256 totalShares;
-        for (uint256 i = 0; i < shares.length; i++) {
-            totalShares += shares[i];
-            fractionalOwnership[tokenId][owners[i]] = shares[i];
-            emit FractionalOwnershipUpdated(tokenId, owners[i], shares[i]);
-        }
-        require(totalShares == 100, "Shares must sum to 100");
-    }
-
-    function getOwnershipHistory(uint256 tokenId) public view returns (address[] memory) {
-        return ownershipHistory[tokenId];
-    }
-
-    function verifyTicket(uint256 tokenId) public view returns (
-        bool isValid,
-        bool isUsed,
-        bool isExpired,
-        TicketMetadata memory metadata
-    ) {
-        Ticket storage ticket = tickets[tokenId];
-        return (
-            ticket.isValid,
-            usedTickets[tokenId],
-            block.timestamp >= ticket.eventDate,
-            ticket.metadata
-        );
-    }
-
-    function getFractionalOwnership(uint256 tokenId, address owner) public view returns (uint256) {
-        return fractionalOwnership[tokenId][owner];
+    } else {
+        return true;
     }
 }
+
+
+    // ✅ Internal mint function (allows minting new tokens)
+    function _mint(address to, uint256 tokenId, string memory uri) internal {
+        require(to != address(0), "ERC721: mint to the zero address");
+        require(_owners[tokenId] == address(0), "ERC721: token already minted");
+
+        _balances[to] += 1;
+        _owners[tokenId] = to;
+        _tokenURIs[tokenId] = uri;
+
+        emit Transfer(address(0), to, tokenId);
+    }
+} 
