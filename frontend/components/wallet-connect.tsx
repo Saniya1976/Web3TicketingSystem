@@ -1,50 +1,54 @@
-"use client";
-
-import { useState, useEffect } from 'react';
-import { Button } from "@/components/ui/button";
-import { Wallet } from "lucide-react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import { toast } from "sonner";
+import Web3Modal from "web3modal";
 
-export function WalletConnect() {
-  const [account, setAccount] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
+const WalletConnect = ({ setSigner }: { setSigner: (signer: ethers.Signer) => void }) => {
+    const [account, setAccount] = useState<string | null>(null);
+    const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
 
-  const connectWallet = async () => {
-    if (typeof window.ethereum === "undefined") {
-      toast.error("Please install MetaMask to connect your wallet");
-      return;
-    }
+    useEffect(() => {
+        const checkConnection = async () => {
+            const web3Modal = new Web3Modal();
+            if (web3Modal.cachedProvider) {
+                await connectWallet();
+            }
+        };
+        checkConnection();
+    }, []);
 
-    try {
-      setIsConnecting(true);
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
-      const address = accounts[0];
-      setAccount(address);
-      toast.success("Wallet connected successfully!");
-    } catch (error) {
-      console.error("Error connecting wallet:", error);
-      toast.error("Failed to connect wallet");
-    } finally {
-      setIsConnecting(false);
-    }
-  };
+    const connectWallet = async () => {
+        try {
+            const web3Modal = new Web3Modal({
+                cacheProvider: true,
+            });
 
-  const formatAddress = (address: string) => {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
+            const connection = await web3Modal.connect();
+            const web3Provider = new ethers.providers.Web3Provider(connection);
+            
+            if (!web3Provider) throw new Error("No provider found"); // Ensure provider exists
+            
+            setProvider(web3Provider);
+            const signer = web3Provider.getSigner();
+            const address = await signer.getAddress();
 
-  return (
-    <Button
-      variant={account ? "outline" : "default"}
-      size="sm"
-      onClick={connectWallet}
-      disabled={isConnecting}
-      className="flex items-center gap-2"
-    >
-      <Wallet className="h-4 w-4" />
-      {account ? formatAddress(account) : "Connect Wallet"}
-    </Button>
-  );
-}
+            setAccount(address);
+            setSigner(signer);
+        } catch (error) {
+            console.error("Wallet connection failed:", error);
+        }
+    };
+
+    return (
+        <div className="p-4">
+            {account ? (
+                <p className="text-green-500">Connected: {account}</p>
+            ) : (
+                <button onClick={connectWallet} className="p-2 bg-blue-500 text-white rounded">
+                    Connect Wallet
+                </button>
+            )}
+        </div>
+    );
+};
+
+export default WalletConnect;
